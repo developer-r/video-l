@@ -1,12 +1,14 @@
 /**
  * Movie Parser Plugin для Lampa
- * Простая версия для тестирования
+ * Минимальная версия
  */
 
 (function() {
     'use strict';
 
-    var version = '1.0.1';
+    console.log('MovieParser: Script loaded');
+
+    var version = '1.0.2';
 
     // Конфигурация
     var Config = {
@@ -22,21 +24,16 @@
         var filter = new Lampa.Filter(object);
         var last;
 
+        var self = this;
+
         this.initialize = function() {
-            var _this = this;
+            console.log('MovieParser: Component initialize');
             
             this.loading(true);
             
-            filter.onSearch = function(value) {
-                Lampa.Activity.replace({search: value, clarification: true});
-            };
-            
+            // Простой фильтр
             filter.onBack = function() {
-                _this.start();
-            };
-            
-            filter.onSelect = function(type, a, b) {
-                Lampa.Select.close();
+                self.start();
             };
             
             if (filter.addButtonBack) filter.addButtonBack();
@@ -45,7 +42,7 @@
             files.appendFiles(scroll.render());
             files.appendHead(filter.render());
             scroll.minus(files.render().find('.explorer__files-head'));
-            scroll.body().append(Lampa.Template.get('lampac_content_loading'));
+            scroll.body().append('<div style="padding:20px;text-align:center">Загрузка...</div>');
             
             Lampa.Controller.enable('content');
             this.loading(false);
@@ -55,71 +52,48 @@
         };
 
         this.search = function() {
-            var query = object.search || object.movie.title || '.matrix';
+            var query = object.search || object.movie.title || 'matrix';
             
             var url = 'https://api.themoviedb.org/3/search/movie?api_key=' + Config.tmdb_api_key + 
                       '&language=' + Config.tmdb_lang + 
                       '&query=' + encodeURIComponent(query) + 
                       '&page=1';
             
-            network.timeout(10000);
-            network["native"](url, this.parse.bind(this), this.error.bind(this));
-        };
-
-        this.find = function() {
-            this.search();
-        };
-
-        this.request = function(url) {
-            network["native"](url, this.parse.bind(this), this.error.bind(this));
+            console.log('MovieParser: Searching', query);
+            
+            network.timeout(15000);
+            network["native"](url, 
+                function(json) { self.parse(json); }, 
+                function() { self.error(); }
+            );
         };
 
         this.parse = function(json) {
-            if (!json || !json.results) {
-                this.error({});
+            console.log('MovieParser: Got results', json);
+            
+            if (!json || !json.results || !json.results.length) {
+                this.error();
                 return;
             }
             
             var _this = this;
-            var items = json.results.slice(0, 15).map(function(item) {
-                return {
-                    title: item.title || 'Без названия',
-                    original_title: item.original_title || '',
-                    year: item.release_date ? item.release_date.slice(0, 4) : '',
-                    poster: item.poster_path ? 'https://image.tmdb.org/t/p/w500' + item.poster_path : './img/img_broken.svg',
-                    description: (item.overview || '').substring(0, 100),
-                    rating: item.vote_average,
-                    id: item.id,
-                    method: 'link',
-                    url: 'https://api.themoviedb.org/3/movie/' + item.id + '?api_key=' + Config.tmdb_api_key
-                };
-            });
-            
-            this.activity.loader(false);
-            this.display(items);
-        };
-
-        this.display = function(items) {
-            var _this = this;
-            
             scroll.clear();
             
-            items.forEach(function(element, index) {
+            json.results.slice(0, 10).forEach(function(item, index) {
+                var title = item.title || 'Без названия';
+                var year = item.release_date ? item.release_date.slice(0, 4) : '----';
+                var poster = item.poster_path ? 'https://image.tmdb.org/t/p/w500' + item.poster_path : './img/img_broken.svg';
+                var rating = item.vote_average ? '★ ' + item.vote_average.toFixed(1) : '';
+                
                 var html = $('<div class="online-prestige selector">' +
-                    '<div class="online-prestige__img">' +
-                    '<img src="' + element.poster + '" onerror="this.src=\'./img/img_broken.svg\'">' +
-                    '</div>' +
+                    '<div class="online-prestige__img"><img src="' + poster + '" onerror="this.src=\'./img/img_broken.svg\'"></div>' +
                     '<div class="online-prestige__body">' +
-                    '<div class="online-prestige__title">' + element.title + '</div>' +
-                    '<div class="online-prestige__time">' + element.year + '</div>' +
-                    '<div class="online-prestige__info">' + element.description + '</div>' +
-                    '<div class="online-prestige__quality">' + (element.rating ? '★ ' + element.rating.toFixed(1) : '') + '</div>' +
-                    '</div>' +
-                    '</div>');
+                    '<div class="online-prestige__title">' + title + '</div>' +
+                    '<div class="online-prestige__time">' + year + ' ' + rating + '</div>' +
+                    '</div></div>');
                 
                 html.on('hover:enter', function() {
-                    // Показать детали
-                    _this.movieInfo(element);
+                    Lampa.Noty.show(title + '\n' + (item.overview || '').substring(0, 150));
                 }).on('hover:focus', function(e) {
                     last = e.target;
                     scroll.update($(e.target), true);
@@ -131,34 +105,17 @@
             Lampa.Controller.enable('content');
         };
 
-        this.movieInfo = function(item) {
-            var _this = this;
-            
-            // Получаем детали
-            network.silent(item.url, function(details) {
-                var info_text = (details.overview || 'Нет описания');
-                
-                // Показываем сообщение
-                Lampa.Noty.show(info_text.substring(0, 200));
-            });
-        };
-
         this.error = function() {
             var html = $('<div class="online-empty">' +
-                '<div class="online-empty__title">Ошибка поиска</div>' +
-                '<div class="online-empty__time">Проверьте интернет соединение</div>' +
-                '</div>');
-            
+                '<div class="online-empty__title">Ошибка</div>' +
+                '<div class="online-empty__time">Проверьте интернет</div></div>');
             scroll.clear();
             scroll.append(html);
             this.loading(false);
         };
 
-        this.getChoice = function() {
-            return {season: 0, voice: 0};
-        };
-
-        this.saveChoice = function(choice) {};
+        this.getChoice = function() { return {season:0,voice:0}; };
+        this.saveChoice = function() {};
 
         this.loading = function(status) {
             if (status) this.activity.loader(true);
@@ -180,12 +137,9 @@
                     if (Navigator.canmove('up')) Navigator.move('up');
                     else Lampa.Controller.toggle('head');
                 },
-                down: function() {
-                    Navigator.move('down');
-                },
+                down: function() { Navigator.move('down'); },
                 right: function() {
                     if (Navigator.canmove('right')) Navigator.move('right');
-                    else filter.show('Фильтр', 'filter');
                 },
                 left: function() {
                     if (Navigator.canmove('left')) Navigator.move('left');
@@ -193,18 +147,11 @@
                 },
                 back: this.back.bind(this)
             });
-            
             Lampa.Controller.toggle('content');
         };
 
-        this.render = function() {
-            return files.render();
-        };
-
-        this.back = function() {
-            Lampa.Activity.backward();
-        };
-
+        this.render = function() { return files.render(); };
+        this.back = function() { Lampa.Activity.backward(); };
         this.pause = function() {};
         this.stop = function() {};
         this.destroy = function() {
@@ -214,137 +161,111 @@
         };
     }
 
-    // Регистрация манифеста
+    // Регистрация
     var manifst = {
         type: 'video',
         version: version,
-        name: 'MovieParser',
-        description: 'Поиск фильмов через TMDB',
+        name: 'MovieParser TMDB',
+        description: 'Поиск фильмов',
         component: 'movie_parser'
     };
 
-    function initPlugin() {
+    function startPlugin() {
         try {
-            console.log('MovieParser: Starting...');
+            console.log('MovieParser: Starting plugin...');
             
-            // Регистрируем компонент
+            // Компонент
             Lampa.Component.add('movie_parser', component);
             
-            // Добавляем языковые строки
+            // Язык
             Lampa.Lang.add({
-                movie_parser_watch: {
-                    ru: 'Смотреть',
-                    en: 'Watch'
-                },
-                movie_parser_search: {
-                    ru: 'Поиск фильмов',
-                    en: 'Search movies'
-                }
+                mp_title: {ru:'MovieParser',en:'MovieParser'},
+                mp_watch: {ru:'Смотреть',en:'Watch'}
             });
             
-            // Добавляем источник поиска
-            var source = {
+            // Поиск
+            var src = {
                 title: 'TMDB',
-                search: function(params, oncomplite) {
-                    var network = new Lampa.Reguest();
+                search: function(p, done) {
+                    var net = new Lampa.Reguest();
                     var url = 'https://api.themoviedb.org/3/search/movie?api_key=' + Config.tmdb_api_key + 
                               '&language=' + Config.tmdb_lang + 
-                              '&query=' + encodeURIComponent(params.query) + 
-                              '&page=1';
+                              '&query=' + encodeURIComponent(p.query) + '&page=1';
                     
-                    network.timeout(10000);
-                    network.silent(url, function(json) {
+                    net.timeout(10000);
+                    net.silent(url, function(json) {
                         if (json && json.results) {
-                            var cards = json.results.slice(0, 20).map(function(item) {
+                            var cards = json.results.slice(0,15).map(function(i){
                                 return {
-                                    id: item.id,
-                                    title: item.title,
-                                    original_title: item.original_title,
-                                    release_date: item.release_date,
-                                    poster: item.poster_path ? 'https://image.tmdb.org/t/p/w500' + item.poster_path : './img/img_broken.svg',
-                                    vote_average: item.vote_average
+                                    id: i.id,
+                                    title: i.title,
+                                    original_title: i.original_title,
+                                    release_date: i.release_date,
+                                    poster: i.poster_path ? 'https://image.tmdb.org/t/p/w500'+i.poster_path : './img/img_broken.svg',
+                                    vote_average: i.vote_average
                                 };
                             });
-                            oncomplite([{title: 'Фильмы', results: cards}]);
+                            done([{title:'Фильмы',results:cards}]);
                         } else {
-                            oncomplite([]);
+                            done([]);
                         }
-                    }, function() {
-                        oncomplite([]);
-                    });
+                    }, function(){ done([]); });
                 },
-                params: {lazy: true, align_left: true},
-                onSelect: function(params, close) {
+                params: {lazy:true, align_left:true},
+                onSelect: function(p, close) {
                     close();
                     Lampa.Activity.push({
-                        url: '',
-                        title: params.element.title,
-                        component: 'movie_parser',
-                        movie: {
-                            id: params.element.id,
-                            title: params.element.title,
-                            original_title: params.element.original_title,
-                            release_date: params.element.release_date,
-                            poster_path: params.element.poster,
-                            vote_average: params.element.vote_average
-                        },
-                        search: params.element.title,
-                        page: 1
+                        url:'', title: p.element.title,
+                        component:'movie_parser',
+                        movie:{id:p.element.id,title:p.element.title,original_title:p.element.original_title,release_date:p.element.release_date,poster_path:p.element.poster,vote_average:p.element.vote_average},
+                        search:p.element.title, page:1
                     });
                 }
             };
             
-            Lampa.Search.addSource(source);
+            Lampa.Search.addSource(src);
             
-            // Добавляем кнопку на карточку
+            // Кнопка
             Lampa.Listener.follow('full', function(e) {
                 if (e.type === 'complite') {
-                    var btn = $('<div class="full-start__button selector view--movie_parser">' +
-                        '<svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">' +
-                        '<path d="M256 0C114.6 0 0 114.6 0 256s114.6 256 256 256 256-114.6 256-256S397.4 0 256 0z" fill="#E53935"/>' +
-                        '<path d="M199.8 368.5V143.5l192 112.5-192 112.5z" fill="#fff"/>' +
-                        '</svg><span>TMDB</span></div>');
-                    
-                    btn.on('hover:enter', function() {
-                        Lampa.Activity.push({
-                            url: '',
-                            title: 'Поиск фильмов',
-                            component: 'movie_parser',
-                            movie: e.data.movie,
-                            search: e.data.movie.title,
-                            page: 1
-                        });
+                    var btn = $('<div class="full-start__button selector view--mp"><svg viewBox="0 0 512 512"><path d="M256 0C114.6 0 0 114.6 0 256s114.6 256 256 256 256-114.6 256-256S397.4 0 256 0z" fill="#E53935"/><path d="M199.8 368.5V143.5l192 112.5-192 112.5z" fill="#fff"/></svg><span>TMDB</span></div>');
+                    btn.on('hover:enter', function(){
+                        Lampa.Activity.push({url:'',title:'Поиск',component:'movie_parser',movie:e.data.movie,search:e.data.movie.title,page:1});
                     });
-                    
-                    var target = e.object.activity.render().find('.view--torrent');
-                    if (target.length) target.after(btn);
+                    var t = e.object.activity.render().find('.view--torrent');
+                    if (t && t.length) t.after(btn);
                 }
             });
             
-            console.log('MovieParser: Loaded successfully');
+            console.log('MovieParser: Plugin ready');
             
-        } catch (e) {
-            console.error('MovieParser: Init error', e);
+        } catch(e) {
+            console.error('MovieParser: Error', e);
         }
     }
 
     // Запуск
     Lampa.Manifest.plugins = manifst;
 
-    if (window.Lampa) {
-        if (Lampa.App && Lampa.App.started) {
-            initPlugin();
-        } else {
-            Lampa.Listener.follow('app', function(e) {
-                if (e.type === 'complite') {
-                    setTimeout(initPlugin, 500);
-                }
-            });
+    function init() {
+        console.log('MovieParser: Init');
+        if (window.Lampa) {
+            if (Lampa.App && Lampa.App.started) {
+                startPlugin();
+            } else {
+                Lampa.Listener.follow('app', function(e) {
+                    if (e.type === 'complite') {
+                        setTimeout(startPlugin, 100);
+                    }
+                });
+            }
         }
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
     } else {
-        window.addEventListener('load', function() {
-            setTimeout(initPlugin, 1000);
-        });
+        init();
     }
 
 })();
