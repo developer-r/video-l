@@ -39,24 +39,35 @@
 
     // Инициализация плагина
     function initPlugin() {
-        console.log('MovieParser: Инициализация плагина...');
-        
-        // Регистрация компонента
-        Lampa.Component.add('movie_parser', component);
-        
-        // Добавление языковых строк
-        addLang();
-        
-        // Добавление кнопки в главное меню
-        addMainButton();
-        
-        // Добавление поискового источника
-        addSearchSource();
-        
-        // Добавление кнопки на карточку фильма
-        addCardButton();
-        
-        console.log('MovieParser: Плагин загружен');
+        try {
+            console.log('MovieParser: Инициализация плагина...');
+            
+            // Проверяем доступность Lampa
+            if (!Lampa.Component || !Lampa.Search) {
+                console.log('MovieParser: Lampa API не готова, повтор через 2 сек');
+                setTimeout(initPlugin, 2000);
+                return;
+            }
+            
+            // Регистрация компонента
+            Lampa.Component.add('movie_parser', component);
+            
+            // Добавление языковых строк
+            addLang();
+            
+            // Добавление кнопки в главное меню
+            addMainButton();
+            
+            // Добавление поискового источника
+            addSearchSource();
+            
+            // Добавление кнопки на карточку фильма
+            addCardButton();
+            
+            console.log('MovieParser: Плагин загружен');
+        } catch (e) {
+            console.error('MovieParser: Ошибка инициализации:', e);
+        }
     }
 
     // Основной компонент
@@ -489,8 +500,12 @@
         };
 
         // Автоматическая инициализация
-        if (!this.initialize) {
-            this.initialize();
+        if (typeof this.initialize === 'function') {
+            try {
+                this.initialize();
+            } catch(e) {
+                console.error('MovieParser initialize error:', e);
+            }
         }
     }
 
@@ -525,7 +540,13 @@
 
     // Добавить источник поиска
     function addSearchSource() {
-        var source = {
+        try {
+            if (!Lampa.Search) {
+                console.log('MovieParser: Lampa.Search не готов');
+                return;
+            }
+            
+            var source = {
             title: 'TMDB',
             search: function(params, oncomplite) {
                 var network = new Lampa.Reguest();
@@ -596,11 +617,20 @@
         };
         
         Lampa.Search.addSource(source);
+        } catch(e) {
+            console.error('MovieParser addSearchSource error:', e);
+        }
     }
 
     // Добавить кнопку на карточку фильма
     function addCardButton() {
-        Lampa.Listener.follow('full', function(e) {
+        try {
+            if (!Lampa.Listener) {
+                console.log('MovieParser: Lampa.Listener не готов');
+                return;
+            }
+            
+            Lampa.Listener.follow('full', function(e) {
             if (e.type === 'complite') {
                 var btn = $(Lampa.Lang.translate(
                     '<div class="full-start__button selector view--movie_parser">' +
@@ -625,6 +655,9 @@
                 e.object.activity.render().find('.view--torrent').after(btn);
             }
         });
+        } catch(e) {
+            console.error('MovieParser addCardButton error:', e);
+        }
     }
 
     // Регистрация манифеста плагина
@@ -636,15 +669,25 @@
         component: 'movie_parser'
     };
 
+    // Регистрируем плагин в Lampa
+    Lampa.Manifest.plugins = manifst;
+
     // Запуск плагина при загрузке Lampa
     if (window.Lampa) {
-        Lampa.Listener.follow('app', function(e) {
-            if (e.type === 'complite') {
-                initPlugin();
-            }
-        });
+        // Проверяем, уже ли приложение загружено
+        if (Lampa.App && Lampa.App.started) {
+            initPlugin();
+        } else {
+            Lampa.Listener.follow('app', function(e) {
+                if (e.type === 'complite') {
+                    initPlugin();
+                }
+            });
+        }
     } else {
-        document.addEventListener('DOMContentLoaded', initPlugin);
+        document.addEventListener('DOMContentLoaded', function() {
+            setTimeout(initPlugin, 1000);
+        });
     }
 
     // Дополнительно: функции для работы с конкретными видеохостингами
